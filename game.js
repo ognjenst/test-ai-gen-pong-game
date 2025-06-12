@@ -44,6 +44,27 @@ const ball = {
 let playerScore = 0;
 let aiScore = 0;
 
+// Game state
+let isGameRunning = false;
+let ballInPlay = false;
+let speedUpInterval = null;
+let ballSpeedStartTime = null;
+
+// Add Start button dynamically above the canvas
+function createStartButton() {
+    let btn = document.createElement('button');
+    btn.id = 'startBtn';
+    btn.textContent = 'Start Game';
+    btn.style.display = 'block';
+    btn.style.margin = '16px auto';
+    btn.style.fontSize = '20px';
+    btn.style.padding = '8px 24px';
+    btn.style.cursor = 'pointer';
+    canvas.parentNode.insertBefore(btn, canvas);
+    btn.addEventListener('click', startGame);
+}
+createStartButton();
+
 // Draw functions
 function drawRect(x, y, w, h, color) {
     ctx.fillStyle = color;
@@ -86,11 +107,25 @@ function render() {
     drawRect(ai.x, ai.y, ai.width, ai.height, ai.color);
 
     // Ball
-    drawCircle(ball.x + ball.size/2, ball.y + ball.size/2, ball.size/2, BALL_COLOR);
+    if (ballInPlay) {
+        drawCircle(ball.x + ball.size/2, ball.y + ball.size/2, ball.size/2, BALL_COLOR);
+    } else {
+        // Draw ball at center for reset
+        drawCircle(canvas.width/2, canvas.height/2, ball.size/2, BALL_COLOR);
+    }
 
     // Score
     drawText(playerScore, canvas.width / 2 - 50, 40);
     drawText(aiScore, canvas.width / 2 + 30, 40);
+
+    // If not running, show instruction
+    if (!isGameRunning) {
+        ctx.fillStyle = "#fff";
+        ctx.font = "28px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("Click Start to play!", canvas.width/2, canvas.height/2 + 60);
+        ctx.textAlign = "left";
+    }
 }
 
 // Handle player paddle movement with mouse
@@ -131,6 +166,9 @@ function resetBall(direction = 1) {
     ball.dx = ball.speed * direction;
     // Randomize vertical direction
     ball.dy = (Math.random() > 0.5 ? 1 : -1) * (3 + Math.random() * 2);
+    ballInPlay = true;
+    ballSpeedStartTime = Date.now();
+    startSpeedInterval();
 }
 
 // Collision detection
@@ -143,7 +181,37 @@ function collision(paddle, ball) {
     );
 }
 
+// Ball speed up logic
+function startSpeedInterval() {
+    if (speedUpInterval) clearInterval(speedUpInterval);
+    speedUpInterval = setInterval(() => {
+        // Only speed up if ball is in play
+        if (ballInPlay) {
+            // Increase speed, keep direction
+            let currentSpeed = Math.sqrt(ball.dx * ball.dx + ball.dy * ball.dy);
+            let newSpeed = currentSpeed + 1;
+
+            // Recalculate dx, dy maintaining direction
+            let angle = Math.atan2(ball.dy, ball.dx);
+            ball.dx = Math.cos(angle) * newSpeed;
+            ball.dy = Math.sin(angle) * newSpeed;
+            ball.speed = newSpeed;
+        }
+    }, 10000); // every 10 seconds
+}
+
+// Stop speed up interval
+function stopSpeedInterval() {
+    if (speedUpInterval) {
+        clearInterval(speedUpInterval);
+        speedUpInterval = null;
+    }
+}
+
+// update and game logic
 function update() {
+    if (!isGameRunning || !ballInPlay) return;
+
     // Move ball
     ball.x += ball.dx;
     ball.y += ball.dy;
@@ -162,8 +230,9 @@ function update() {
         collidePoint /= player.height/2;
         let angle = collidePoint * (Math.PI / 4); // Max 45deg
         let direction = 1;
-        ball.dx = direction * ball.speed * Math.cos(angle);
-        ball.dy = ball.speed * Math.sin(angle);
+        let currentSpeed = Math.sqrt(ball.dx * ball.dx + ball.dy * ball.dy);
+        ball.dx = direction * currentSpeed * Math.cos(angle);
+        ball.dy = currentSpeed * Math.sin(angle);
     }
     // AI collision
     if (collision(ai, ball)) {
@@ -172,31 +241,66 @@ function update() {
         collidePoint /= ai.height/2;
         let angle = collidePoint * (Math.PI / 4);
         let direction = -1;
-        ball.dx = direction * ball.speed * Math.cos(angle);
-        ball.dy = ball.speed * Math.sin(angle);
+        let currentSpeed = Math.sqrt(ball.dx * ball.dx + ball.dy * ball.dy);
+        ball.dx = direction * currentSpeed * Math.cos(angle);
+        ball.dy = currentSpeed * Math.sin(angle);
     }
 
     // Left wall (AI scores)
     if (ball.x <= 0) {
         aiScore++;
-        resetBall(1);
+        ballInPlay = false;
+        stopSpeedInterval();
+        setTimeout(() => {
+            if (isGameRunning) resetBall(1);
+        }, 1000);
     }
 
     // Right wall (Player scores)
     if (ball.x + ball.size >= canvas.width) {
         playerScore++;
-        resetBall(-1);
+        ballInPlay = false;
+        stopSpeedInterval();
+        setTimeout(() => {
+            if (isGameRunning) resetBall(-1);
+        }, 1000);
     }
 
     // AI movement
     aiMove();
 }
 
+// Game loop (animation frame)
 function gameLoop() {
     update();
     render();
     requestAnimationFrame(gameLoop);
 }
 
-// Start game
+// Start game logic
+function startGame() {
+    if (isGameRunning) return;
+    // Reset
+    playerScore = 0;
+    aiScore = 0;
+    ball.speed = 5;
+    ball.dx = 5;
+    ball.dy = 3;
+    isGameRunning = true;
+    ballInPlay = false;
+    document.getElementById('startBtn').style.display = 'none';
+
+    // Small delay before ball starts
+    setTimeout(() => {
+        resetBall(1);
+    }, 800);
+}
+
+// Optionally, allow pressing Space to start next round if desired (not required)
+
+// Stop game logic, if needed (e.g., on a future stop button)
+// function stopGame() {...}
+
+// Initial render
+render();
 gameLoop();
